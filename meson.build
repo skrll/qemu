@@ -1567,7 +1567,7 @@ if have_system and get_option('curses').allowed()
     endif
   endif
   if get_option('iconv').allowed()
-    foreach link_args : [ ['-liconv'], [] ]
+    foreach link_args : [ [], ['-liconv'] ]
       # Programs will be linked with glib and this will bring in libiconv on FreeBSD.
       # We need to use libiconv if available because mixing libiconv's headers with
       # the system libc does not work.
