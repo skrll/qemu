@@ -20,6 +20,15 @@
 # define CONFIG_NVMM_IS_POSSIBLE
 #endif /* COMPILING_PER_TARGET */
 
+int nvmm_init_vcpu(CPUState *cpu);
+int nvmm_vcpu_exec(CPUState *cpu);
+void nvmm_destroy_vcpu(CPUState *cpu);
+
+void nvmm_cpu_synchronize_state(CPUState *cpu);
+void nvmm_cpu_synchronize_post_reset(CPUState *cpu);
+void nvmm_cpu_synchronize_post_init(CPUState *cpu);
+void nvmm_cpu_synchronize_pre_loadvm(CPUState *cpu);
+
 #ifdef CONFIG_NVMM_IS_POSSIBLE
 extern bool nvmm_allowed;
 #define nvmm_enabled() (nvmm_allowed)

@@ -1,8 +1,5 @@
-i386_system_ss.add(when: 'CONFIG_NVMM', if_true:
+i386_system_ss.add(when: [nvmm, 'CONFIG_NVMM'], if_true:
   files(
-  'nvmm-all.c',
-  'nvmm-accel-ops.c',
+  'nvmm.c',
   )
 )
-
-i386_system_ss.add(when: 'CONFIG_NVMM', if_true: nvmm)

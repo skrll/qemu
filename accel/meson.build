@@ -9,6 +9,7 @@ if have_system
   subdir('qtest')
   subdir('kvm')
   subdir('xen')
+  subdir('nvmm')
   subdir('stubs')
   subdir('mshv')
 endif

@@ -15,7 +15,6 @@
 #include "qemu/guest-random.h"
 
 #include "system/nvmm.h"
-#include "nvmm-accel-ops.h"
 
 static void *qemu_nvmm_cpu_thread_fn(void *arg)
 {
