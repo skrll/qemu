@@ -12,6 +12,8 @@
 #ifndef QEMU_NVMM_H
 #define QEMU_NVMM_H
 
+#include "qemu/accel.h"
+
 #include <nvmm.h>
 
 #ifdef COMPILING_PER_TARGET
@@ -50,5 +52,14 @@ extern bool nvmm_allowed;
 #else /* !CONFIG_NVMM_IS_POSSIBLE */
 #define nvmm_enabled() 0
 #endif /* !CONFIG_NVMM_IS_POSSIBLE */
+
+struct NVMMstate;
+
+#define TYPE_NVMM_ACCEL ACCEL_CLASS_NAME("nvmm")
+typedef struct NVMMState NVMMState;
+DECLARE_INSTANCE_CHECKER(NVMMState, NVMM_STATE,
+                         TYPE_NVMM_ACCEL)
+
+extern NVMMState *nvmm_state;
 
 #endif /* QEMU_NVMM_H */

@@ -8,7 +8,7 @@
  */
 
 #include "qemu/osdep.h"
-#include "system/kvm_int.h"
+#include "system/nvmm_int.h"
 #include "qemu/main-loop.h"
 #include "accel/accel-cpu-ops.h"
 #include "system/cpus.h"

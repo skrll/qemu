@@ -325,7 +325,8 @@ accelerator_targets += { 'CONFIG_XEN': xen_targets }
 
 if cpu == 'aarch64'
   accelerator_targets += {
-    'CONFIG_HVF': ['aarch64-softmmu']
+    'CONFIG_HVF': ['aarch64-softmmu'],
+    'CONFIG_NVMM': ['aarch64-softmmu'],
   }
 elif cpu == 'x86_64'
   accelerator_targets += {

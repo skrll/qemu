@@ -867,21 +867,6 @@ nvmm_destroy_vcpu(CPUState *cpu)
     g_free(cpu->accel);
 }
 
-static void
-nvmm_accel_class_init(ObjectClass *oc, const void *data)
-{
-    AccelClass *ac = ACCEL_CLASS(oc);
-    ac->name = "NVMM";
-    ac->init_machine = nvmm_accel_init;
-    ac->allowed = &nvmm_allowed;
-}
-
-static const TypeInfo nvmm_accel_type = {
-    .name = ACCEL_CLASS_NAME("nvmm"),
-    .parent = TYPE_ACCEL,
-    .class_init = nvmm_accel_class_init,
-};
-
 static void nvmm_cpu_instance_init(CPUState *cs)
 {
     X86CPU *cpu = X86_CPU(cs);

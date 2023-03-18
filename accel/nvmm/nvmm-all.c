@@ -9,12 +9,13 @@
 
 #include "qemu/osdep.h"
 #include "cpu.h"
-#include "exec/address-spaces.h"
-#include "exec/ioport.h"
+#include "system/address-spaces.h"
+#include "system/ioport.h"
 #include "qemu/accel.h"
-#include "sysemu/nvmm.h"
-
-#include <nvmm.h>
+#include "accel/accel-ops.h"
+#include "qapi/error.h"
+#include "system/nvmm.h"
+#include "qemu/error-report.h"
 
 struct qemu_machine {
     struct nvmm_capability cap;
@@ -23,10 +24,10 @@ struct qemu_machine {
 
 /* -------------------------------------------------------------------------- */
 
-static bool nvmm_allowed;
+bool nvmm_allowed;
 static struct qemu_machine qemu_mach;
 
-static struct nvmm_machine *
+struct nvmm_machine *
 get_nvmm_mach(void)
 {
     return &qemu_mach.mach;
@@ -63,7 +64,39 @@ nvmm_io_callback(struct nvmm_io *io)
 static void
 nvmm_mem_callback(struct nvmm_mem *mem)
 {
-    cpu_physical_memory_rw(mem->gpa, mem->data, mem->size, mem->write);
+
+//    address_space_rw(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED,
+//                     val, req->size, rw);
+#if 0
+        trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
+        switch (run->exit_reason) {
+        case KVM_EXIT_IO:
+            /* Called outside BQL */
+            kvm_handle_io(run->io.port, attrs,
+                          (uint8_t *)run + run->io.data_offset,
+                          run->io.direction,
+                          run->io.size,
+                          run->io.count);
+            ret = 0;
+            break;
+        case KVM_EXIT_MMIO:
+            /* Called outside BQL */
+            address_space_rw(&address_space_memory,
+                             run->mmio.phys_addr, attrs,
+                             run->mmio.data,
+                             run->mmio.len,
+                             run->mmio.is_write);
+            ret = 0;
+            break;
+#endif
+//    cpu_physical_memory_rw(mem->gpa, mem->data, mem->size, mem->write);
+
+    MemTxAttrs attrs = MEMTXATTRS_UNSPECIFIED; // { 0 };
+
+    address_space_rw(&address_space_memory,
+                     mem->gpa,
+                     attrs,
+                     mem->data, mem->size, mem->write);
 
     /* Needed, otherwise infinite loop. */
     current_cpu->vcpu_dirty = false;
@@ -287,7 +320,7 @@ static MemoryListener nvmm_memory_listener = {
     .region_add = nvmm_region_add,
     .region_del = nvmm_region_del,
     .log_sync = nvmm_log_sync,
-    .priority = MEMORY_LISTENER_PRIORITY_ACCEL
+    .priority = MEMORY_LISTENER_PRIORITY_ACCEL,
 };
 
 static void
@@ -314,8 +347,10 @@ static struct RAMBlockNotifier nvmm_ram_notifier = {
 /* -------------------------------------------------------------------------- */
 
 static int
-nvmm_accel_init(MachineState *ms)
+nvmm_accel_init(AccelState *as, MachineState *ms)
 {
+//    MachineClass *mc = MACHINE_GET_CLASS(ms);
+//    KVMState *s = KVM_STATE(as);
     int ret, err;
 
     ret = nvmm_init();
@@ -354,14 +389,8 @@ nvmm_accel_init(MachineState *ms)
     return 0;
 }
 
-int
-nvmm_enabled(void)
-{
-    return nvmm_allowed;
-}
-
 static void
-nvmm_accel_class_init(ObjectClass *oc, void *data)
+nvmm_accel_class_init(ObjectClass *oc, const void *data)
 {
     AccelClass *ac = ACCEL_CLASS(oc);
     ac->name = "NVMM";
