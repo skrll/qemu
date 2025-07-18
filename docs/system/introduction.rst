@@ -34,7 +34,7 @@ Tiny Code Generator (TCG) capable of emulating many CPUs.
     - x86
   * - NetBSD Virtual Machine Monitor (nvmm)
     - NetBSD
-    - x86
+    - Arm (64 bit only), x86
   * - Tiny Code Generator (tcg)
     - Linux, other POSIX, Windows, MacOS
     - Arm, x86, Loongarch64, MIPS, PPC, s390x, Sparc64
