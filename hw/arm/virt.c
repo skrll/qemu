@@ -2145,6 +2145,7 @@ static void virt_post_cpus_gic_realized(VirtMachineState *vms,
     steal_time = object_property_get_bool(OBJECT(first_cpu),
                                           "kvm-steal-time", NULL);
 
+    // XXXNH what's this?
     if (kvm_enabled()) {
         hwaddr pvtime_reg_base = vms->memmap[VIRT_PVTIME].base;
         hwaddr pvtime_reg_size = vms->memmap[VIRT_PVTIME].size;
@@ -2328,7 +2329,7 @@ static void machvirt_init(MachineState *machine)
         exit(1);
     }
 
-    if (vms->mte && hvf_enabled()) {
+    if (vms->mte && (hvf_enabled() || nvmm_enabled())) {
         error_report("mach-virt: %s does not support providing "
                      "MTE to the guest CPU",
                      current_accel_name());

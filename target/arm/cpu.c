@@ -565,6 +565,11 @@ static void arm_cpu_reset_hold(Object *obj, ResetType type)
     if (kvm_enabled()) {
         kvm_arm_reset_vcpu(cpu);
     }
+#if 0
+    if (nvmm_enabled()) {
+        nvmm_arm_reset_vcpu(cpu);
+    }
+#endif
 #endif
 
     if (tcg_enabled()) {
@@ -1511,6 +1516,7 @@ static void arm_cpu_post_init(Object *obj)
         qdev_property_add_static(DEVICE(cpu), &arm_cpu_gt_cntfrq_property);
     }
 
+    // XXXNH
     if (kvm_enabled()) {
         kvm_arm_add_vcpu_properties(cpu);
     }
@@ -1600,6 +1606,7 @@ void arm_cpu_finalize_features(ARMCPU *cpu, Error **errp)
         }
     }
 
+    // XXXNH
     if (kvm_enabled()) {
         kvm_arm_steal_time_finalize(cpu, &local_err);
         if (local_err != NULL) {
@@ -1628,8 +1635,8 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
      * this is the first point where we can report it.
      */
     if (cpu->host_cpu_probe_failed) {
-        if (!kvm_enabled() && !hvf_enabled()) {
-            error_setg(errp, "The 'host' CPU type can only be used with KVM or HVF");
+        if (!kvm_enabled() && !hvf_enabled() && !nvmm_enabled()) {
+            error_setg(errp, "The 'host' CPU type can only be used with KVM, HVF, or NVMM");
         } else {
             error_setg(errp, "Failed to retrieve host CPU features");
         }
@@ -1978,6 +1985,7 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
     if (arm_feature(env, ARM_FEATURE_PMU)) {
         pmu_init(cpu);
 
+        // XXXNH
         if (!kvm_enabled()) {
             arm_register_pre_el_change_hook(cpu, &pmu_pre_el_change, 0);
             arm_register_el_change_hook(cpu, &pmu_post_el_change, 0);

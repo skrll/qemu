@@ -749,6 +749,7 @@ static Error *nvmm_migration_blocker;
  * and another thread signaling the vCPU thread to exit.
  */
 
+// XXXNH retain as common between x86/arm
 void
 nvmm_ipi_signal(int sigcpu)
 {
@@ -763,6 +764,7 @@ nvmm_ipi_signal(int sigcpu)
     }
 }
 
+// XXXNH retain as common between x86/arm
 void
 nvmm_init_cpu_signals(void)
 {

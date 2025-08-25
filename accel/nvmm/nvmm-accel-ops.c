@@ -35,6 +35,7 @@ static void *qemu_nvmm_cpu_thread_fn(void *arg)
         fprintf(stderr, "nvmm_init_vcpu failed: %s\n", strerror(-r));
         exit(1);
     }
+    // nvmm_init_cpu_signals(cpu); // XXXNH needed?
 
     /* signal CPU creation */
     cpu_thread_signal_created(cpu);
@@ -83,13 +84,23 @@ static void nvmm_accel_ops_class_init(ObjectClass *oc, const void *data)
     AccelOpsClass *ops = ACCEL_OPS_CLASS(oc);
 
     ops->create_vcpu_thread = nvmm_start_vcpu_thread;
+//  ops->cpu_thread_is_idle = nvmm_vcpu_thread_is_idle;
     ops->kick_vcpu_thread = nvmm_kick_vcpu_thread;
     ops->handle_interrupt = generic_handle_interrupt;
+//  ops->cpus_are_resettable = nvmm_cpus_are_resettable;
 
     ops->synchronize_post_reset = nvmm_cpu_synchronize_post_reset;
     ops->synchronize_post_init = nvmm_cpu_synchronize_post_init;
     ops->synchronize_state = nvmm_cpu_synchronize_state;
     ops->synchronize_pre_loadvm = nvmm_cpu_synchronize_pre_loadvm;
+
+//  ops->insert_breakpoint = nvmm_insert_breakpoint;
+//  ops->remove_breakpoint = nvmm_remove_breakpoint;
+//  ops->remove_all_breakpoints = nvmm_remove_all_breakpoints;
+//  ops->update_guest_debug = nvmm_update_guest_debug;
+//  ops->supports_guest_debug = nvmm_arch_supports_guest_debug;
+
+//  ops->get_vcpu_stats = nvmm_get_vcpu_stats;
 }
 
 static const TypeInfo nvmm_accel_ops_type = {
@@ -98,6 +109,7 @@ static const TypeInfo nvmm_accel_ops_type = {
     .parent = TYPE_ACCEL_OPS,
     .class_init = nvmm_accel_ops_class_init,
     .abstract = true,
+
 };
 
 static void nvmm_accel_ops_register_types(void)

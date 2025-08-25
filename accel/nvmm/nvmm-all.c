@@ -65,37 +65,13 @@ static void
 nvmm_mem_callback(struct nvmm_mem *mem)
 {
 
-//    address_space_rw(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED,
-//                     val, req->size, rw);
-#if 0
-        trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
-        switch (run->exit_reason) {
-        case KVM_EXIT_IO:
-            /* Called outside BQL */
-            kvm_handle_io(run->io.port, attrs,
-                          (uint8_t *)run + run->io.data_offset,
-                          run->io.direction,
-                          run->io.size,
-                          run->io.count);
-            ret = 0;
-            break;
-        case KVM_EXIT_MMIO:
-            /* Called outside BQL */
-            address_space_rw(&address_space_memory,
-                             run->mmio.phys_addr, attrs,
-                             run->mmio.data,
-                             run->mmio.len,
-                             run->mmio.is_write);
-            ret = 0;
-            break;
-#endif
-//    cpu_physical_memory_rw(mem->gpa, mem->data, mem->size, mem->write);
+    trace_nvmm_run_exit(mem->vcpu->cpuid, NVMM_VCPU_EXIT_MEMORY);
 
-    MemTxAttrs attrs = MEMTXATTRS_UNSPECIFIED; // { 0 };
+
+    MemTxAttrs attrs = MEMTXATTRS_UNSPECIFIED;
 
     address_space_rw(&address_space_memory,
-                     mem->gpa,
-                     attrs,
+                     mem->gpa, attrs,
                      mem->data, mem->size, mem->write);
 
     /* Needed, otherwise infinite loop. */
@@ -199,7 +175,7 @@ nvmm_vcpu_exec(CPUState *cpu)
 {
     int ret, fatal;
 
-    while (1) {
+    while (true) {
         if (cpu->exception_index >= EXCP_INTERRUPT) {
             ret = cpu->exception_index;
             cpu->exception_index = -1;
@@ -243,16 +219,25 @@ nvmm_update_mapping(hwaddr start_pa, ram_addr_t size, uintptr_t hva,
 }
 
 static void
-nvmm_process_section(MemoryRegionSection *section, int add)
+nvmm_process_section(MemoryRegionSection *section, bool add)
 {
     MemoryRegion *mr = section->mr;
     hwaddr start_pa = section->offset_within_address_space;
     ram_addr_t size = int128_get64(section->size);
+    bool writable = !mr->readonly && !mr->rom_device;
     unsigned int delta;
     uintptr_t hva;
 
-    if (!memory_region_is_ram(mr)) {
-        return;
+   if (!memory_region_is_ram(mr)) {
+        if (writable) {
+            return;
+        } else if (!memory_region_is_romd(mr)) {
+            /*
+             * If the memory device is not in romd_mode, then we actually want
+             * to remove the hvf memory slot so all accesses will trap.
+             */
+             add = false;
+        }
     }
 
     /* Adjust start_pa and size so that they are page-aligned. */
@@ -271,21 +256,22 @@ nvmm_process_section(MemoryRegionSection *section, int add)
     hva = (uintptr_t)memory_region_get_ram_ptr(mr) +
         section->offset_within_region + delta;
 
-    nvmm_update_mapping(start_pa, size, hva, add,
-        memory_region_is_rom(mr), mr->name);
+    bool rom = mr->readonly ||
+        (!memory_region_is_ram(mr) && memory_region_is_romd(mr));
+    nvmm_update_mapping(start_pa, size, hva, add, rom, mr->name);
 }
 
 static void
 nvmm_region_add(MemoryListener *listener, MemoryRegionSection *section)
 {
     memory_region_ref(section->mr);
-    nvmm_process_section(section, 1);
+    nvmm_process_section(section, /* add = */ true);
 }
 
 static void
 nvmm_region_del(MemoryListener *listener, MemoryRegionSection *section)
 {
-    nvmm_process_section(section, 0);
+    nvmm_process_section(section, /* add = */ false);
     memory_region_unref(section->mr);
 }
 
