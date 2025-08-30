@@ -40,6 +40,7 @@ void nvmm_init_cpu_signals(void);
 extern struct nvmm_assist_callbacks nvmm_callbacks;
 
 /* MD: target/<arch>/nvmm/nvmm.c */
+int nvmm_arch_init(void);
 int nvmm_init_vcpu(CPUState *cpu);
 void nvmm_destroy_vcpu(CPUState *cpu);
 void nvmm_get_registers(CPUState *cpu);

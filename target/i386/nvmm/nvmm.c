@@ -783,6 +783,12 @@ nvmm_init_cpu_signals(void)
 }
 
 int
+nvmm_arch_init(void)
+{
+    return 0;
+}
+
+int
 nvmm_init_vcpu(CPUState *cpu)
 {
     struct nvmm_machine *mach = get_nvmm_mach();

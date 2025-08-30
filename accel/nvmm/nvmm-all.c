@@ -371,6 +371,12 @@ nvmm_accel_init(AccelState *as, MachineState *ms)
     memory_listener_register(&nvmm_memory_listener, &address_space_memory);
     ram_block_notifier_add(&nvmm_ram_notifier);
 
+    ret = nvmm_arch_init();
+    if (ret) {
+        error_report("NVMM: Architecture initialisation failed, ret=%d", ret);
+        return ret;
+    }
+
     printf("NetBSD Virtual Machine Monitor accelerator is operational\n");
     return 0;
 }
