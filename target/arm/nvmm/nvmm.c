@@ -1030,10 +1030,16 @@ nvmm_init_vcpu(CPUState *cpu)
     state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1] = (1U << 31) | arm_cpu->mp_affinity;
 
     CPUArchState *env = &arm_cpu->env;
+#if 0
     uint64_t pfr = state->tids[NVMM_AARCH64_TID_ID_AA64PFR0_EL1];
+
     pfr &= ~ID_AA64PFR0_EL1_GIC;
     pfr |= __SHIFTIN(env->gicv3state ? 1 : 0, ID_AA64PFR0_EL1_GIC);
     state->tids[NVMM_AARCH64_TID_ID_AA64PFR0_EL1] = pfr;
+#endif
+
+    // ArmVirtQemu 202605 needs this
+    arm_cpu->psci_version = QEMU_PSCI_VERSION_0_2;
 
     /* We're limited to underlying hardware caps, override internal versions */
     arm_cpu->isar.idregs[ID_AA64MMFR0_EL1_IDX] = state->tids[NVMM_AARCH64_TID_ID_AA64MMFR0_EL1];
