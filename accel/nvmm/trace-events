@@ -1,0 +1,43 @@
+# See docs/devel/tracing.rst for syntax documentation.
+
+# nvmm-all.c
+
+nvmm_cpu_exec(void) ""
+nvmm_run_exit(int cpu_index, uint32_t reason) "cpu_index %d, reason %d"
+nvmm_mapping(uint64_t start_pa, uint64_t size, uintptr_t hva, bool add, bool rom, const char *name) "pa 0x%"PRIx64" size 0x%"PRIx64" hva 0x%"PRIxPTR" add %d rom %d name %s"
+nvmm_memory_access(int cpuid, uint64_t gpa, size_t size, bool write) "cpuid %d, gpa 0x%"PRIx64", size %zu, write %d"
+
+#nvmm_ioctl(unsigned long type, void *arg) "type 0x%lx, arg %p"
+#nvmm_vm_ioctl(unsigned long type, void *arg) "type 0x%lx, arg %p"
+#nvmm_vcpu_ioctl(int cpu_index, unsigned long type, void *arg) "cpu_index %d, type 0x%lx, arg %p"
+#nvmm_device_ioctl(int fd, unsigned long type, void *arg) "dev fd %d, type 0x%lx, arg %p"
+#nvmm_failed_reg_get(uint64_t id, const char *msg) "Warning: Unable to retrieve ONEREG %" PRIu64 " from nvmm: %s"
+#nvmm_failed_reg_set(uint64_t id, const char *msg) "Warning: Unable to set ONEREG %" PRIu64 " to nvmm: %s"
+#nvmm_init_vcpu(int cpu_index, unsigned long arch_cpu_id) "index: %d id: %lu"
+#nvmm_create_vcpu(int cpu_index, unsigned long arch_cpu_id, int nvmm_fd) "index: %d, id: %lu, nvmm fd: %d"
+#nvmm_destroy_vcpu(int cpu_index, unsigned long arch_cpu_id) "index: %d id: %lu"
+#nvmm_park_vcpu(int cpu_index, unsigned long arch_cpu_id) "index: %d id: %lu"
+#nvmm_unpark_vcpu(unsigned long arch_cpu_id, const char *msg) "id: %lu %s"
+#nvmm_irqchip_commit_routes(void) ""
+#nvmm_irqchip_add_msi_route(char *name, int vector, int virq) "dev %s vector %d virq %d"
+#nvmm_irqchip_update_msi_route(int virq) "Updating MSI route virq=%d"
+#nvmm_irqchip_release_virq(int virq) "virq %d"
+#nvmm_set_ioeventfd_mmio(int fd, uint64_t addr, uint32_t val, bool assign, uint32_t size, bool datamatch) "fd: %d @0x%" PRIx64 " val=0x%x assign: %d size: %d match: %d"
+#nvmm_set_ioeventfd_pio(int fd, uint16_t addr, uint32_t val, bool assign, uint32_t size, bool datamatch) "fd: %d @0x%x val=0x%x assign: %d size: %d match: %d"
+#nvmm_set_user_memory(uint16_t as, uint16_t slot, uint32_t flags, uint64_t guest_phys_addr, uint64_t memory_size, uint64_t userspace_addr, uint32_t fd, uint64_t fd_offset, int ret) "AddrSpace#%d Slot#%d flags=0x%x gpa=0x%"PRIx64 " size=0x%"PRIx64 " ua=0x%"PRIx64 " guest_memfd=%d" " guest_memfd_offset=0x%" PRIx64 " ret=%d"
+#nvmm_clear_dirty_log(uint32_t slot, uint64_t start, uint32_t size) "slot#%"PRId32" start 0x%"PRIx64" size 0x%"PRIx32
+#nvmm_resample_fd_notify(int gsi) "gsi %d"
+#nvmm_dirty_ring_full(int id) "vcpu %d"
+#nvmm_dirty_ring_reap_vcpu(int id) "vcpu %d"
+#nvmm_dirty_ring_page(int vcpu, uint32_t slot, uint64_t offset) "vcpu %d fetch %"PRIu32" offset 0x%"PRIx64
+#nvmm_dirty_ring_reaper(const char *s) "%s"
+#nvmm_dirty_ring_reap(uint64_t count, int64_t t) "reaped %"PRIu64" pages (took %"PRIi64" us)"
+#nvmm_dirty_ring_reaper_kick(const char *reason) "%s"
+#nvmm_dirty_ring_flush(int finished) "%d"
+#nvmm_failed_get_vcpu_mmap_size(void) ""
+#nvmm_interrupt_exit_request(void) ""
+#nvmm_io_window_exit(void) ""
+#nvmm_run_exit_system_event(int cpu_index, uint32_t event_type) "cpu_index %d, system_even_type %"PRIu32
+#nvmm_convert_memory(uint64_t start, uint64_t size, const char *msg) "start 0x%" PRIx64 " size 0x%" PRIx64 " %s"
+#nvmm_memory_fault(uint64_t start, uint64_t size, uint64_t flags) "start 0x%" PRIx64 " size 0x%" PRIx64 " flags 0x%" PRIx64
+#nvmm_slots_grow(unsigned int old, unsigned int new) "%u -> %u"

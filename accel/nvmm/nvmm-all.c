@@ -16,6 +16,7 @@
 #include "qapi/error.h"
 #include "system/nvmm.h"
 #include "qemu/error-report.h"
+#include "trace.h"
 
 struct qemu_machine {
     struct nvmm_capability cap;
@@ -67,7 +68,7 @@ nvmm_mem_callback(struct nvmm_mem *mem)
 
     trace_nvmm_run_exit(mem->vcpu->cpuid, NVMM_VCPU_EXIT_MEMORY);
 
-
+    trace_nvmm_memory_access(mem->vcpu->cpuid, mem->gpa, mem->size, mem->write);
     MemTxAttrs attrs = MEMTXATTRS_UNSPECIFIED;
 
     address_space_rw(&address_space_memory,
@@ -175,13 +176,33 @@ nvmm_vcpu_exec(CPUState *cpu)
 {
     int ret, fatal;
 
+    trace_nvmm_cpu_exec();
+
+#if 0
+    if (cpu->halted) {
+        return EXCP_HLT;
+    }
+
+    bql_unlock();
+    cpu_exec_start(cpu);
+#endif
+
     while (true) {
+
+#if 0
+        if (!(cpu->singlestep_enabled & SSTEP_NOIRQ) && hvf_inject_interrupts(cpu)) {
+            return EXCP_INTERRUPT;
+        }
+#endif
+        // XXXNH this is needed to exit QEMU
         if (cpu->exception_index >= EXCP_INTERRUPT) {
+            // Inject interrupts!!! or many it's in nvmm_vcpu_loop
             ret = cpu->exception_index;
             cpu->exception_index = -1;
             break;
         }
 
+        // XXXNH arch dependant loop
         fatal = nvmm_vcpu_loop(cpu);
 
         if (fatal) {
@@ -189,6 +210,10 @@ nvmm_vcpu_exec(CPUState *cpu)
             abort();
         }
     }
+#if 0
+    cpu_exec_end();
+    bql_lock();
+#endif
 
     return ret;
 }
@@ -200,6 +225,8 @@ nvmm_update_mapping(hwaddr start_pa, ram_addr_t size, uintptr_t hva,
     struct nvmm_machine *mach = get_nvmm_mach();
     int ret, prot;
 
+    trace_nvmm_mapping(start_pa, size, hva, add, rom, name);
+
     if (add) {
         prot = PROT_READ | PROT_EXEC;
         if (!rom) {
@@ -208,6 +235,8 @@ nvmm_update_mapping(hwaddr start_pa, ram_addr_t size, uintptr_t hva,
         ret = nvmm_gpa_map(mach, hva, start_pa, size, prot);
     } else {
         ret = nvmm_gpa_unmap(mach, hva, start_pa, size);
+        if (ret < 0 && errno == ESRCH)
+		return;
     }
 
     if (ret == -1) {

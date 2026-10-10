@@ -26,7 +26,7 @@ static void *qemu_nvmm_cpu_thread_fn(void *arg)
     rcu_register_thread();
 
     bql_lock();
-    qemu_thread_get_self(cpu->thread);
+    qemu_thread_get_self(cpu->thread);              //XXXNH?
     cpu->thread_id = qemu_get_thread_id();
     current_cpu = cpu;
 
