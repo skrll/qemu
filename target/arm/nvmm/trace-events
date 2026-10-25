@@ -3,10 +3,20 @@
 nvmm_inject_fiq(void) "injecting FIQ"
 nvmm_inject_irq(void) "injecting IRQ"
 nvmm_exit_irq(void) "irq exit"
-nvmm_wfi(void) "wfi"
+nvmm_wfi(uint64_t pc, uint64_t ctl) "wfi @ 0x%"PRIx64 " ctl %"PRIx64
+nvmm_wfi_seconds(uint64_t seconds) "seconds %"PRIu64
+nvmm_wfi_nanos(uint64_t nanos) "nanos %"PRIu64
+nvmm_wfi_done(uint64_t pc) "wfi new @ 0x%"PRIx64 " done"
+nvmm_wfi_noirq(void) "wfi and no timer"
 nvmm_wait_for_ipi(int sleep) "IPI sleep %d"
-nvmm_wait_for_ipi_sleep(uint64_t seconds, uint64_t nanos) "sleep %"PRIu64" seconds %"PRIu64
-
+nvmm_wait_for_ipi_sleep(uint64_t seconds, uint64_t nanos) "sleep %"PRIu64 " seconds %"PRIu64
+nvmm_wfi_ticks_to_sleep(uint64_t cval, uint64_t vtimer, int diff) "cval %"PRIu64 " vtimer %"PRIu64 " diff %d"
+nvmm_wfi_calcs(uint64_t cntfrq, uint64_t seconds, uint64_t nanos) "cntfrq %"PRIx64 " seconds %"PRIx64 " nanos %"PRIx64
+nvmm_vtimer_irq(void) "vtimer irq"
+nvmm_ptimer_irq(void) "ptimer irq"
+nvmm_updated_dirty(void) "updated dirty"
+nvmm_mrs(uint64_t esr, uint64_t pc) "mrs esr %"PRIx64 " pc %"PRIx64
+nvmm_msr(uint64_t esr, uint64_t pc) "msr esr %"PRIx64 " pc %"PRIx64
 
 #nvmm_data_abort(uint64_t va, uint64_t pa, bool isv, bool iswrite, bool s1ptw, uint32_t len, uint32_t srt) "data abort: [va=0x%016"PRIx64" pa=0x%016"PRIx64" isv=%d iswrite=%d s1ptw=%d len=%d srt=%d]"
 #nvmm_insn_abort(uint64_t pc, uint32_t set, bool fnv, bool ea, bool s1ptw, uint32_t ifsc) "insn abort: [pc=0x%"PRIx64" set=%d fnv=%d ea=%d s1ptw=%d ifsc=%d]"

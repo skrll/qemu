@@ -557,6 +557,130 @@ nvmm_vcpu_post_run(CPUState *cpu, struct nvmm_vcpu_exit *exit)
 }
 
 /* -------------------------------------------------------------------------- */
+
+#define SYSREG_MDSCR_EL1      SYSREG_ENC(2, 0, 0, 2, 2)
+#define SYSREG_OSLAR_EL1      SYSREG_ENC(2, 0, 1, 0, 4)
+
+
+#define MASK                                    (       \
+    ESR_ISS_SYSREG_OP0 |                                \
+    ESR_ISS_SYSREG_OP2 |                                \
+    ESR_ISS_SYSREG_OP1 |                                \
+    ESR_ISS_SYSREG_CRN |                                \
+    ESR_ISS_SYSREG_CRM                          )
+
+#define SYSREG_ENC(op0, op1, CRn, CRm, op2)     (       \
+    __SHIFTIN(op0, ESR_ISS_SYSREG_OP0) |                \
+    __SHIFTIN(op2, ESR_ISS_SYSREG_OP2) |                \
+    __SHIFTIN(op1, ESR_ISS_SYSREG_OP1) |                \
+    __SHIFTIN(CRn, ESR_ISS_SYSREG_CRN) |                \
+    __SHIFTIN(CRm, ESR_ISS_SYSREG_CRM)          )
+
+static int
+nvmm_handle_mrs(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
+    CPUARMState *env)
+{
+#if 0
+    ARMCPU *arm_cpu = ARM_CPU(cpu);
+    CPUARMState *env = &arm_cpu->env;
+    AccelCPUState *qcpu = cpu->accel;
+
+    struct nvmm_vcpu *vcpu = &qcpu->vcpu;
+#endif
+    struct nvmm_vcpu_state *state = vcpu->state;
+    struct nvmm_vcpu_exit *exit = vcpu->exit;
+    const uint64_t esr = exit->esr;
+    int ret;
+
+    ret = nvmm_vcpu_getstate(mach, vcpu,
+          NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS);
+    if (ret == -1)
+        error_report("NVMM: Failed to set virtual processor context,"
+          " error=%d", errno);
+
+    const uint64_t Rt = __SHIFTOUT(esr, ESR_ISS_SYSREG_RT);
+    ret = -1;
+    switch (esr & MASK) {
+    case SYSREG_MDSCR_EL1:
+        state->gprs[Rt] = env->cp15.mdscr_el1;
+        ret = 0;
+        break;
+    default:
+        error_report("XXXXXX: NOTYET: NVMM_VCPU_EXIT_MRS (esr %"PRIx64, esr);
+        abort();
+    }
+
+    if (ret == 0) {
+        state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+        ret = nvmm_vcpu_setstate(mach, vcpu, NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS);
+        if (ret == -1) {
+            error_report("NVMM: Failed to set CPU state,"
+                " error=%d", errno);
+        }
+    }
+
+    trace_nvmm_mrs(esr, state->sprs[NVMM_AARCH64_SPR_PC]);
+
+    return ret;
+}
+
+/* -------------------------------------------------------------------------- */
+static int
+nvmm_handle_msr(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
+    CPUARMState *env)
+{
+#if 0
+    ARMCPU *arm_cpu = ARM_CPU(cpu);
+    CPUARMState *env = &arm_cpu->env;
+    AccelCPUState *qcpu = cpu->accel;
+
+    struct nvmm_vcpu *vcpu = &qcpu->vcpu;
+#endif
+    struct nvmm_vcpu_state *state = vcpu->state;
+    struct nvmm_vcpu_exit *exit = vcpu->exit;
+    uint64_t esr = exit->esr;
+    int ret = -1;
+
+    ret = nvmm_vcpu_getstate(mach, vcpu, NVMM_AARCH64_STATE_SPRS);
+    if (ret == -1) {
+        error_report("NVMM: Failed to get virtual processor context,"
+            " error=%d", errno);
+    }
+
+    ret = -1;
+    switch (esr & MASK) {
+    case SYSREG_MDSCR_EL1:
+        // XXX really reg
+        env->cp15.mdscr_el1 = 0;
+        ret = 0;
+        break;
+    case SYSREG_OSLAR_EL1:
+	// XXX really reg'
+        env->cp15.oslsr_el1 = 0;
+        ret = 0;
+        break;
+
+    default:
+        error_report("XXXXXX: NOTYET: NVMM_VCPU_EXIT_MSR (esr %"PRIx64, esr);
+        abort();
+        break;
+    }
+
+    if (ret == 0) {
+        state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+        ret = nvmm_vcpu_setstate(mach, vcpu, NVMM_AARCH64_STATE_SPRS);
+        if (ret == -1) {
+            error_report("NVMM: Failed to set CPU state,"
+                " error=%d", errno);
+        }
+    }
+
+    trace_nvmm_msr(esr, state->sprs[NVMM_AARCH64_SPR_PC]);
+
+    return ret;
+}
+
+/* -------------------------------------------------------------------------- */
 static int
 nvmm_handle_halted(struct nvmm_machine *mach, CPUState *cpu,
     struct nvmm_vcpu_exit *exit)
@@ -594,7 +718,6 @@ nvmm_wait_for_ipi(CPUState *cpu, struct timespec *ts)
 #define CNTCTL_IMASK    __BIT(1)
 #define CNTCTL_ENABLE   __BIT(0)
 
-
 static void
 nvmm_wfi(CPUState *cpu)
 {
@@ -608,34 +731,49 @@ nvmm_wfi(CPUState *cpu)
     uint64_t seconds;
     uint64_t nanos;
     uint32_t cntfrq;
+    int ret;
 
     if (cpu_test_interrupt(cpu, CPU_INTERRUPT_HARD | CPU_INTERRUPT_FIQ)) {
         /* Interrupt pending, no need to wait */
         return;
     }
 
-    trace_nvmm_wfi();
-    /* ret = */ nvmm_vcpu_getstate(mach, vcpu, NVMM_AARCH64_STATE_SPRS);
-#if 0
+    ret = nvmm_vcpu_getstate(mach, vcpu, NVMM_AARCH64_STATE_SPRS);
+    if (ret == -1) {
+        error_report("NVMM: Failed to get virtual processor context,"
+            " error=%d", errno);
+    }
+
     uint64_t ctl = state->sprs[NVMM_AARCH64_SPR_CNTV_CTL_EL0];
-    if (!(ctl & CNTCTL_ENABLE) || (ctl & CNTCTL_IMASK)) {
+
+    trace_nvmm_wfi(state->sprs[NVMM_AARCH64_SPR_PC], ctl);
+#if 1
+    bool enabled = (ctl & CNTCTL_ENABLE) != 0;
+    bool masked = (ctl & CNTCTL_IMASK) != 0;
+    if (!enabled || masked) {
         /* Timer disabled or masked, just wait for an IPI. */
+        trace_nvmm_wfi_noirq();
         nvmm_wait_for_ipi(cpu, NULL);
-        state->sprs[NVMM_AARCH64_SPR_PC] += 4;
-        cpu->vcpu_dirty = true;
         return;
     }
 #endif
+
     uint64_t cval = state->sprs[NVMM_AARCH64_SPR_CNTV_CVAL_EL0];
-    ticks_to_sleep = cval - nvmm_vtimer_val();
+    uint64_t vtimer = nvmm_vtimer_val();
+    ticks_to_sleep = cval - vtimer;
+
+    trace_nvmm_wfi_ticks_to_sleep(cval, vtimer, ticks_to_sleep);
+
     if (ticks_to_sleep < 0) {
-        return;
+        goto done;
     }
 
     cntfrq = gt_cntfrq_period_ns(arm_cpu);
     seconds = muldiv64(ticks_to_sleep, cntfrq, NANOSECONDS_PER_SECOND);
     ticks_to_sleep -= muldiv64(seconds, NANOSECONDS_PER_SECOND, cntfrq);
     nanos = ticks_to_sleep * cntfrq;
+
+    trace_nvmm_wfi_calcs(cntfrq, seconds, nanos);
 
     /*
      * Don't sleep for less than the time a context switch would take,
@@ -647,11 +785,24 @@ nvmm_wfi(CPUState *cpu)
     }
 
     trace_nvmm_wait_for_ipi_sleep(seconds, nanos);
+    trace_nvmm_wfi_seconds(seconds);
+    trace_nvmm_wfi_nanos(nanos);
+    trace_nvmm_wait_for_ipi_sleep(seconds, nanos);
     ts = (struct timespec) { seconds, nanos };
     nvmm_wait_for_ipi(cpu, &ts);
 
+done:
     state->sprs[NVMM_AARCH64_SPR_PC] += 4;
-    cpu->vcpu_dirty = true;
+
+    trace_nvmm_wfi_done(state->sprs[NVMM_AARCH64_SPR_PC]);
+    ret = nvmm_vcpu_setstate(mach, vcpu, NVMM_AARCH64_STATE_SPRS);
+    if (ret == -1) {
+        error_report("NVMM: Failed to set CPU state,"
+            " error=%d", errno);
+    }
+
+// infinite loop otherwise?!? wtf?
+//    cpu->vcpu_dirty = true;
 }
 
 
@@ -837,6 +988,7 @@ nvmm_vcpu_loop(CPUState *cpu)
      */
     do {
         if (cpu->vcpu_dirty) {
+            trace_nvmm_updated_dirty();
             nvmm_set_registers(cpu);
             cpu->vcpu_dirty = false;
         }
@@ -878,8 +1030,14 @@ nvmm_vcpu_loop(CPUState *cpu)
             trace_nvmm_exit_irq();
             bql_lock();
             if (exit->exitstate.vtimer) {
+                trace_nvmm_vtimer_irq();
                 // Gets sets in interrupt_request
                 qemu_set_irq(arm_cpu->gt_timer_outputs[GTIMER_VIRT], 1);
+                // send irq 
+            }
+            if (exit->exitstate.ptimer) {
+                trace_nvmm_ptimer_irq();
+                qemu_set_irq(arm_cpu->gt_timer_outputs[GTIMER_PHYS], 1);
             }
             bql_unlock();
 
@@ -896,12 +1054,10 @@ nvmm_vcpu_loop(CPUState *cpu)
             ret = nvmm_handle_mem(mach, vcpu);
             break;
         case NVMM_VCPU_EXIT_MRS:
-            error_report("XXXXXX: NOTYET: NVMM_VCPU_EXIT_MRS");
-            abort();
+            ret = nvmm_handle_mrs(mach, vcpu, env);
             break;
         case NVMM_VCPU_EXIT_MSR:
-            error_report("XXXXXX: NOTYET: NVMM_VCPU_EXIT_MSR");
-            abort();
+            ret = nvmm_handle_msr(mach, vcpu, env);
             break;
         case NVMM_VCPU_EXIT_HVC:
             cpu_synchronize_state(cpu);
@@ -1192,6 +1348,10 @@ nvmm_init_vcpu(CPUState *cpu)
     struct nvmm_aarch64_state *state = qcpu->vcpu.state;
     ARMCPU *arm_cpu = ARM_CPU(cpu);
     ret = nvmm_vcpu_getstate(mach, &qcpu->vcpu, NVMM_AARCH64_STATE_ALL);
+    if (ret == -1) {
+        error_report("NVMM: Failed to get virtual processor context,"
+            " error=%d", errno);
+    }
 
     state->sprs[NVMM_AARCH64_SPR_MIDR_EL1] = arm_cpu->midr;
     state->sprs[NVMM_AARCH64_SPR_MPIDR_EL1] = (1U << 31) | arm_cpu->mp_affinity;
