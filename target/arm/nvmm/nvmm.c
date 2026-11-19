@@ -2,6 +2,7 @@
  * QEMU NetBSD Virtual Machine Monitor (NVMM) accelerator support for AARCH64
  *
  * Copyright (c) 2023 Ryo Shimizu <ryo@nerv.org>
+ * Copyright (c) 2026 Nick Hudson <skrll@netbsd.org>
  *
  * This work is licensed under the terms of the GNU GPL, version 2 or later.
  * See the COPYING file in the top-level directory.
@@ -27,6 +28,10 @@
 #include "strings.h"
 #include "trace.h"
 #include "arm-powerctl.h"
+#include "target/arm/cpu.h"
+#include "target/arm/internals.h"
+//#include "target/arm/multiprocessing.h"
+#include "target/arm/gtimer.h"
 #include "target/arm/trace.h"
 
 #include <sys/sysctl.h>
@@ -46,8 +51,9 @@ struct NVMMState {
 
 struct nvmm_sreg_match {
 	int group;
-#define SREG_GROUP_SPR	0
-#define SREG_GROUP_TID	1
+#define SREG_GROUP_SPR		0
+#define SREG_GROUP_TID		1
+#define SREG_GROUP_TID32	2
 	int reg;
 	uint32_t key;
 	uint32_t cp_idx;
@@ -186,25 +192,25 @@ static struct nvmm_sreg_match nvmm_sreg_match[] = {
     { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_AA64MMFR2_EL1,    ENCODE_SYSREG(  0,  7, 3, 0, 2) },
 //NO_RAW  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_AA64PFR0_EL1,     ENCODE_SYSREG(  0,  4, 3, 0, 0) },
 //NO_RAW  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_AA64PFR1_EL1,     ENCODE_SYSREG(  0,  4, 3, 0, 1) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_AFR0_EL1,         ENCODE_SYSREG(  0,  1, 3, 0, 3) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_DFR0_EL1,         ENCODE_SYSREG(  0,  1, 3, 0, 2) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_DFR1_EL1,         ENCODE_SYSREG(  0,  3, 3, 0, 5) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_ISAR0_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 0) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_ISAR1_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 1) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_ISAR2_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 2) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_ISAR3_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 3) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_ISAR4_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 4) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_ISAR5_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 5) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_ISAR6_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 7) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_MMFR0_EL1,        ENCODE_SYSREG(  0,  1, 3, 0, 4) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_MMFR1_EL1,        ENCODE_SYSREG(  0,  1, 3, 0, 5) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_MMFR2_EL1,        ENCODE_SYSREG(  0,  1, 3, 0, 6) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_MMFR3_EL1,        ENCODE_SYSREG(  0,  1, 3, 0, 7) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_MMFR4_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 6) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_MMFR5_EL1,        ENCODE_SYSREG(  0,  3, 3, 0, 6) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_PFR0_EL1,         ENCODE_SYSREG(  0,  1, 3, 0, 0) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_PFR1_EL1,         ENCODE_SYSREG(  0,  1, 3, 0, 1) },
-//  { SREG_GROUP_TID, NVMM_AARCH64_TID_ID_PFR2_EL1,         ENCODE_SYSREG(  0,  3, 3, 0, 4) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_AFR0_EL1,         ENCODE_SYSREG(  0,  1, 3, 0, 3) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_DFR0_EL1,         ENCODE_SYSREG(  0,  1, 3, 0, 2) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_DFR1_EL1,         ENCODE_SYSREG(  0,  3, 3, 0, 5) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_ISAR0_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 0) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_ISAR1_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 1) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_ISAR2_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 2) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_ISAR3_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 3) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_ISAR4_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 4) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_ISAR5_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 5) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_ISAR6_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 7) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_MMFR0_EL1,        ENCODE_SYSREG(  0,  1, 3, 0, 4) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_MMFR1_EL1,        ENCODE_SYSREG(  0,  1, 3, 0, 5) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_MMFR2_EL1,        ENCODE_SYSREG(  0,  1, 3, 0, 6) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_MMFR3_EL1,        ENCODE_SYSREG(  0,  1, 3, 0, 7) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_MMFR4_EL1,        ENCODE_SYSREG(  0,  2, 3, 0, 6) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_MMFR5_EL1,        ENCODE_SYSREG(  0,  3, 3, 0, 6) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_PFR0_EL1,         ENCODE_SYSREG(  0,  1, 3, 0, 0) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_PFR1_EL1,         ENCODE_SYSREG(  0,  1, 3, 0, 1) },
+//  { SREG_GROUP_TID32, NVMM_AARCH64_TID_ID_PFR2_EL1,         ENCODE_SYSREG(  0,  3, 3, 0, 4) },
 //  { SREG_GROUP_SPR, NVMM_AARCH64_SPR_ISR_EL1,             ENCODE_SYSREG( 12,  1, 3, 0, 0) },
 //  { SREG_GROUP_SPR, NVMM_AARCH64_SPR_LORC_EL1,            ENCODE_SYSREG( 10,  4, 3, 0, 3) },
 //  { SREG_GROUP_SPR, NVMM_AARCH64_SPR_LOREA_EL1,           ENCODE_SYSREG( 10,  4, 3, 0, 1) },
@@ -218,9 +224,9 @@ static struct nvmm_sreg_match nvmm_sreg_match[] = {
     { SREG_GROUP_SPR, NVMM_AARCH64_SPR_MDSCR_EL1,           ENCODE_SYSREG(  0,  2, 2, 0, 2) },
 //NO_RAW  { SREG_GROUP_SPR, NVMM_AARCH64_SPR_MIDR_EL1,            ENCODE_SYSREG(  0,  0, 3, 0, 0) },
 //NO_RAW  { SREG_GROUP_SPR, NVMM_AARCH64_SPR_MPIDR_EL1,           ENCODE_SYSREG(  0,  0, 3, 0, 5) },
-    { SREG_GROUP_TID, NVMM_AARCH64_TID_MVFR0_EL1,           ENCODE_SYSREG(  0,  3, 3, 0, 0) },
-    { SREG_GROUP_TID, NVMM_AARCH64_TID_MVFR1_EL1,           ENCODE_SYSREG(  0,  3, 3, 0, 1) },
-    { SREG_GROUP_TID, NVMM_AARCH64_TID_MVFR2_EL1,           ENCODE_SYSREG(  0,  3, 3, 0, 2) },
+    { SREG_GROUP_TID32, NVMM_AARCH64_TID_MVFR0_EL1,           ENCODE_SYSREG(  0,  3, 3, 0, 0) },
+    { SREG_GROUP_TID32, NVMM_AARCH64_TID_MVFR1_EL1,           ENCODE_SYSREG(  0,  3, 3, 0, 1) },
+    { SREG_GROUP_TID32, NVMM_AARCH64_TID_MVFR2_EL1,           ENCODE_SYSREG(  0,  3, 3, 0, 2) },
 //  { SREG_GROUP_SPR, NVMM_AARCH64_SPR_NZCV,                ENCODE_SYSREG(  4,  2, 3, 3, 0) },
 //  { SREG_GROUP_SPR, NVMM_AARCH64_SPR_OSDLR_EL1,           ENCODE_SYSREG(  1,  3, 2, 0, 4) },
 //  { SREG_GROUP_SPR, NVMM_AARCH64_SPR_OSDTRRX_EL1,         ENCODE_SYSREG(  0,  0, 2, 0, 2) },
@@ -366,7 +372,7 @@ nvmm_set_registers(CPUState *cpu)
     state->sprs[NVMM_AARCH64_SPR_SP_EL0] = env->sp_el[0];
     state->sprs[NVMM_AARCH64_SPR_SP_EL1] = env->sp_el[1];
     state->sprs[NVMM_AARCH64_SPR_PC] = env->pc;
-    state->sprs[NVMM_AARCH64_SPR_SPSR_EL1] = pstate_read(env);
+    state->sprs[NVMM_AARCH64_SPR_CPSR] = pstate_read(env);
 
     /* FPRs */
     for (i = 0; i < 32; i++) {
@@ -388,6 +394,9 @@ nvmm_set_registers(CPUState *cpu)
             break;
         case SREG_GROUP_TID:
             state->tids[nvmm_sreg_match[i].reg] = val;
+            break;
+        case SREG_GROUP_TID32:
+            state->tids32[nvmm_sreg_match[i].reg] = val;
             break;
         default:
             assert(false);
@@ -413,6 +422,7 @@ nvmm_get_registers(CPUState *cpu)
     AccelCPUState *qcpu = cpu->accel;
     struct nvmm_vcpu *vcpu = &qcpu->vcpu;
     struct nvmm_aarch64_state *state = vcpu->state;
+
     int i, ret;
 
     assert(cpu_is_stopped(cpu) || qemu_cpu_is_self(cpu));
@@ -430,7 +440,7 @@ nvmm_get_registers(CPUState *cpu)
     env->sp_el[0] = state->sprs[NVMM_AARCH64_SPR_SP_EL0];
     env->sp_el[1] = state->sprs[NVMM_AARCH64_SPR_SP_EL1];
     env->pc = state->sprs[NVMM_AARCH64_SPR_PC];
-    pstate_write(env, state->sprs[NVMM_AARCH64_SPR_SPSR_EL1]);
+    pstate_write(env, state->sprs[NVMM_AARCH64_SPR_CPSR]);
 
     /* FPRs */
     for (i = 0; i < 32; i++) {
@@ -453,12 +463,29 @@ nvmm_get_registers(CPUState *cpu)
         case SREG_GROUP_TID:
             val = state->tids[nvmm_sreg_match[i].reg];
             break;
+        case SREG_GROUP_TID32:
+            val = state->tids32[nvmm_sreg_match[i].reg];
+            break;
         default:
             assert(false);
         }
         arm_cpu->cpreg_values[nvmm_sreg_match[i].cp_idx] = val;
     }
     assert(write_list_to_cpustate(arm_cpu));
+}
+
+
+static void nvmm_raise_exception(CPUState *cpu, uint32_t excp,
+                                 uint32_t syndrome, int target_el)
+{
+    ARMCPU *arm_cpu = ARM_CPU(cpu);
+    CPUARMState *env = &arm_cpu->env;
+
+    cpu->exception_index = excp;
+    env->exception.target_el = target_el;
+    env->exception.syndrome = syndrome;
+
+    arm_cpu_do_interrupt(cpu);
 }
 
 
@@ -558,18 +585,151 @@ nvmm_vcpu_post_run(CPUState *cpu, struct nvmm_vcpu_exit *exit)
 
 /* -------------------------------------------------------------------------- */
 
-#define SYSREG_MDSCR_EL1      SYSREG_ENC(2, 0, 0, 2, 2)
-#define SYSREG_OSLAR_EL1      SYSREG_ENC(2, 0, 1, 0, 4)
+#define SYSREG_OSLAR_EL1         SYSREG(2, 0,  1,  0, 4)
+#define SYSREG_OSLSR_EL1         SYSREG(2, 0,  1,  1, 4)
+#define SYSREG_OSDLR_EL1         SYSREG(2, 0,  1,  3, 4)
+#define SYSREG_LORC_EL1          SYSREG(3, 0, 10,  4, 3)
+#define SYSREG_CNTPCT_EL0        SYSREG(3, 3, 14,  0, 1)
+#define SYSREG_CNTP_CTL_EL0      SYSREG(3, 3, 14,  2, 1)
+#define SYSREG_PMCR_EL0          SYSREG(3, 3,  9, 12, 0)
+#define SYSREG_PMUSERENR_EL0     SYSREG(3, 3,  9, 14, 0)
+#define SYSREG_PMCNTENSET_EL0    SYSREG(3, 3,  9, 12, 1)
+#define SYSREG_PMCNTENCLR_EL0    SYSREG(3, 3,  9, 12, 2)
+#define SYSREG_PMINTENCLR_EL1    SYSREG(3, 0,  9, 14, 2)
+#define SYSREG_PMOVSCLR_EL0      SYSREG(3, 3,  9, 12, 3)
+#define SYSREG_PMSWINC_EL0       SYSREG(3, 3,  9, 12, 4)
+#define SYSREG_PMSELR_EL0        SYSREG(3, 3,  9, 12, 5)
+#define SYSREG_PMCEID0_EL0       SYSREG(3, 3,  9, 12, 6)
+#define SYSREG_PMCEID1_EL0       SYSREG(3, 3,  9, 12, 7)
+#define SYSREG_PMCCNTR_EL0       SYSREG(3, 3,  9, 13, 0)
+#define SYSREG_PMCCFILTR_EL0     SYSREG(3, 3, 14, 15, 7)
 
+#define SYSREG_ICC_AP0R0_EL1     SYSREG(3, 0, 12,  8, 4)
+#define SYSREG_ICC_AP0R1_EL1     SYSREG(3, 0, 12,  8, 5)
+#define SYSREG_ICC_AP0R2_EL1     SYSREG(3, 0, 12,  8, 6)
+#define SYSREG_ICC_AP0R3_EL1     SYSREG(3, 0, 12,  8, 7)
+#define SYSREG_ICC_AP1R0_EL1     SYSREG(3, 0, 12,  9, 0)
+#define SYSREG_ICC_AP1R1_EL1     SYSREG(3, 0, 12,  9, 1)
+#define SYSREG_ICC_AP1R2_EL1     SYSREG(3, 0, 12,  9, 2)
+#define SYSREG_ICC_AP1R3_EL1     SYSREG(3, 0, 12,  9, 3)
+#define SYSREG_ICC_ASGI1R_EL1    SYSREG(3, 0, 12, 11, 6)
+#define SYSREG_ICC_BPR0_EL1      SYSREG(3, 0, 12,  8, 3)
+#define SYSREG_ICC_BPR1_EL1      SYSREG(3, 0, 12, 12, 3)
+#define SYSREG_ICC_CTLR_EL1      SYSREG(3, 0, 12, 12, 4)
+#define SYSREG_ICC_DIR_EL1       SYSREG(3, 0, 12, 11, 1)
+#define SYSREG_ICC_EOIR0_EL1     SYSREG(3, 0, 12,  8, 1)
+#define SYSREG_ICC_EOIR1_EL1     SYSREG(3, 0, 12, 12, 1)
+#define SYSREG_ICC_HPPIR0_EL1    SYSREG(3, 0, 12,  8, 2)
+#define SYSREG_ICC_HPPIR1_EL1    SYSREG(3, 0, 12, 12, 2)
+#define SYSREG_ICC_IAR0_EL1      SYSREG(3, 0, 12,  8, 0)
+#define SYSREG_ICC_IAR1_EL1      SYSREG(3, 0, 12, 12, 0)
+#define SYSREG_ICC_IGRPEN0_EL1   SYSREG(3, 0, 12, 12, 6)
+#define SYSREG_ICC_IGRPEN1_EL1   SYSREG(3, 0, 12, 12, 7)
+#define SYSREG_ICC_PMR_EL1       SYSREG(3, 0,  4,  6, 0)
+#define SYSREG_ICC_RPR_EL1       SYSREG(3, 0, 12, 11, 3)
+#define SYSREG_ICC_SGI0R_EL1     SYSREG(3, 0, 12, 11, 7)
+#define SYSREG_ICC_SGI1R_EL1     SYSREG(3, 0, 12, 11, 5)
+#define SYSREG_ICC_SRE_EL1       SYSREG(3, 0, 12, 12, 5)
 
-#define MASK                                    (       \
+#define SYSREG_MDSCR_EL1         SYSREG(2, 0, 0,  2, 2)
+#define SYSREG_DBGBVR0_EL1       SYSREG(2, 0, 0,  0, 4)
+#define SYSREG_DBGBCR0_EL1       SYSREG(2, 0, 0,  0, 5)
+#define SYSREG_DBGWVR0_EL1       SYSREG(2, 0, 0,  0, 6)
+#define SYSREG_DBGWCR0_EL1       SYSREG(2, 0, 0,  0, 7)
+#define SYSREG_DBGBVR1_EL1       SYSREG(2, 0, 0,  1, 4)
+#define SYSREG_DBGBCR1_EL1       SYSREG(2, 0, 0,  1, 5)
+#define SYSREG_DBGWVR1_EL1       SYSREG(2, 0, 0,  1, 6)
+#define SYSREG_DBGWCR1_EL1       SYSREG(2, 0, 0,  1, 7)
+#define SYSREG_DBGBVR2_EL1       SYSREG(2, 0, 0,  2, 4)
+#define SYSREG_DBGBCR2_EL1       SYSREG(2, 0, 0,  2, 5)
+#define SYSREG_DBGWVR2_EL1       SYSREG(2, 0, 0,  2, 6)
+#define SYSREG_DBGWCR2_EL1       SYSREG(2, 0, 0,  2, 7)
+#define SYSREG_DBGBVR3_EL1       SYSREG(2, 0, 0,  3, 4)
+#define SYSREG_DBGBCR3_EL1       SYSREG(2, 0, 0,  3, 5)
+#define SYSREG_DBGWVR3_EL1       SYSREG(2, 0, 0,  3, 6)
+#define SYSREG_DBGWCR3_EL1       SYSREG(2, 0, 0,  3, 7)
+#define SYSREG_DBGBVR4_EL1       SYSREG(2, 0, 0,  4, 4)
+#define SYSREG_DBGBCR4_EL1       SYSREG(2, 0, 0,  4, 5)
+#define SYSREG_DBGWVR4_EL1       SYSREG(2, 0, 0,  4, 6)
+#define SYSREG_DBGWCR4_EL1       SYSREG(2, 0, 0,  4, 7)
+#define SYSREG_DBGBVR5_EL1       SYSREG(2, 0, 0,  5, 4)
+#define SYSREG_DBGBCR5_EL1       SYSREG(2, 0, 0,  5, 5)
+#define SYSREG_DBGWVR5_EL1       SYSREG(2, 0, 0,  5, 6)
+#define SYSREG_DBGWCR5_EL1       SYSREG(2, 0, 0,  5, 7)
+#define SYSREG_DBGBVR6_EL1       SYSREG(2, 0, 0,  6, 4)
+#define SYSREG_DBGBCR6_EL1       SYSREG(2, 0, 0,  6, 5)
+#define SYSREG_DBGWVR6_EL1       SYSREG(2, 0, 0,  6, 6)
+#define SYSREG_DBGWCR6_EL1       SYSREG(2, 0, 0,  6, 7)
+#define SYSREG_DBGBVR7_EL1       SYSREG(2, 0, 0,  7, 4)
+#define SYSREG_DBGBCR7_EL1       SYSREG(2, 0, 0,  7, 5)
+#define SYSREG_DBGWVR7_EL1       SYSREG(2, 0, 0,  7, 6)
+#define SYSREG_DBGWCR7_EL1       SYSREG(2, 0, 0,  7, 7)
+#define SYSREG_DBGBVR8_EL1       SYSREG(2, 0, 0,  8, 4)
+#define SYSREG_DBGBCR8_EL1       SYSREG(2, 0, 0,  8, 5)
+#define SYSREG_DBGWVR8_EL1       SYSREG(2, 0, 0,  8, 6)
+#define SYSREG_DBGWCR8_EL1       SYSREG(2, 0, 0,  8, 7)
+#define SYSREG_DBGBVR9_EL1       SYSREG(2, 0, 0,  9, 4)
+#define SYSREG_DBGBCR9_EL1       SYSREG(2, 0, 0,  9, 5)
+#define SYSREG_DBGWVR9_EL1       SYSREG(2, 0, 0,  9, 6)
+#define SYSREG_DBGWCR9_EL1       SYSREG(2, 0, 0,  9, 7)
+#define SYSREG_DBGBVR10_EL1      SYSREG(2, 0, 0, 10, 4)
+#define SYSREG_DBGBCR10_EL1      SYSREG(2, 0, 0, 10, 5)
+#define SYSREG_DBGWVR10_EL1      SYSREG(2, 0, 0, 10, 6)
+#define SYSREG_DBGWCR10_EL1      SYSREG(2, 0, 0, 10, 7)
+#define SYSREG_DBGBVR11_EL1      SYSREG(2, 0, 0, 11, 4)
+#define SYSREG_DBGBCR11_EL1      SYSREG(2, 0, 0, 11, 5)
+#define SYSREG_DBGWVR11_EL1      SYSREG(2, 0, 0, 11, 6)
+#define SYSREG_DBGWCR11_EL1      SYSREG(2, 0, 0, 11, 7)
+#define SYSREG_DBGBVR12_EL1      SYSREG(2, 0, 0, 12, 4)
+#define SYSREG_DBGBCR12_EL1      SYSREG(2, 0, 0, 12, 5)
+#define SYSREG_DBGWVR12_EL1      SYSREG(2, 0, 0, 12, 6)
+#define SYSREG_DBGWCR12_EL1      SYSREG(2, 0, 0, 12, 7)
+#define SYSREG_DBGBVR13_EL1      SYSREG(2, 0, 0, 13, 4)
+#define SYSREG_DBGBCR13_EL1      SYSREG(2, 0, 0, 13, 5)
+#define SYSREG_DBGWVR13_EL1      SYSREG(2, 0, 0, 13, 6)
+#define SYSREG_DBGWCR13_EL1      SYSREG(2, 0, 0, 13, 7)
+#define SYSREG_DBGBVR14_EL1      SYSREG(2, 0, 0, 14, 4)
+#define SYSREG_DBGBCR14_EL1      SYSREG(2, 0, 0, 14, 5)
+#define SYSREG_DBGWVR14_EL1      SYSREG(2, 0, 0, 14, 6)
+#define SYSREG_DBGWCR14_EL1      SYSREG(2, 0, 0, 14, 7)
+#define SYSREG_DBGBVR15_EL1      SYSREG(2, 0, 0, 15, 4)
+#define SYSREG_DBGBCR15_EL1      SYSREG(2, 0, 0, 15, 5)
+#define SYSREG_DBGWVR15_EL1      SYSREG(2, 0, 0, 15, 6)
+#define SYSREG_DBGWCR15_EL1      SYSREG(2, 0, 0, 15, 7)
+
+#define SYSREG_PMINTENSET_EL1    SYSREG(3, 0,  9, 14, 1)
+#define SYSREG_PMINTENCLR_EL1    SYSREG(3, 0,  9, 14, 2)
+#define SYSREG_PMCR_EL0          SYSREG(3, 3,  9, 12, 0)
+#define SYSREG_PMCNTENSET_EL0    SYSREG(3, 3,  9, 12, 1)
+#define SYSREG_PMCNTENCLR_EL0    SYSREG(3, 3,  9, 12, 2)
+#define SYSREG_PMOVSCLR_EL0      SYSREG(3, 3,  9, 12, 3)
+#define SYSREG_PMSWINC_EL0       SYSREG(3, 3,  9, 12, 4)
+#define SYSREG_PMSELR_EL0        SYSREG(3, 3,  9, 12, 5)
+#define SYSREG_PMCCNTR_EL0       SYSREG(3, 3,  9, 13, 0)
+#define SYSREG_PMUSERENR_EL0     SYSREG(3, 3,  9, 14, 0)
+#define SYSREG_PMOVSSET_EL0      SYSREG(3, 3,  9, 14, 3)
+#define SYSREG_PMEVCNTR0_EL0     SYSREG(3, 3, 14,  8, 0)
+#define SYSREG_PMEVCNTR1_EL0     SYSREG(3, 3, 14,  8, 1)
+#define SYSREG_PMEVCNTR2_EL0     SYSREG(3, 3, 14,  8, 2)
+#define SYSREG_PMEVCNTR3_EL0     SYSREG(3, 3, 14,  8, 3)
+#define SYSREG_PMEVCNTR4_EL0     SYSREG(3, 3, 14,  8, 4)
+#define SYSREG_PMEVCNTR5_EL0     SYSREG(3, 3, 14,  8, 5)
+#define SYSREG_PMEVTYPER0_EL0    SYSREG(3, 3, 14, 12, 0)
+#define SYSREG_PMEVTYPER1_EL0    SYSREG(3, 3, 14, 12, 1)
+#define SYSREG_PMEVTYPER2_EL0    SYSREG(3, 3, 14, 12, 2)
+#define SYSREG_PMEVTYPER3_EL0    SYSREG(3, 3, 14, 12, 3)
+#define SYSREG_PMEVTYPER4_EL0    SYSREG(3, 3, 14, 12, 4)
+#define SYSREG_PMEVTYPER5_EL0    SYSREG(3, 3, 14, 12, 5)
+#define SYSREG_PMCCFILTR_EL0     SYSREG(3, 3, 14, 15, 7)
+
+#define MASK                                             (       \
     ESR_ISS_SYSREG_OP0 |                                \
     ESR_ISS_SYSREG_OP2 |                                \
     ESR_ISS_SYSREG_OP1 |                                \
     ESR_ISS_SYSREG_CRN |                                \
     ESR_ISS_SYSREG_CRM                          )
 
-#define SYSREG_ENC(op0, op1, CRn, CRm, op2)     (       \
+#define SYSREG(op0, op1, CRn, CRm, op2)         (       \
     __SHIFTIN(op0, ESR_ISS_SYSREG_OP0) |                \
     __SHIFTIN(op2, ESR_ISS_SYSREG_OP2) |                \
     __SHIFTIN(op1, ESR_ISS_SYSREG_OP1) |                \
@@ -580,17 +740,17 @@ static int
 nvmm_handle_mrs(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
     CPUARMState *env)
 {
-#if 0
-    ARMCPU *arm_cpu = ARM_CPU(cpu);
-    CPUARMState *env = &arm_cpu->env;
-    AccelCPUState *qcpu = cpu->accel;
-
-    struct nvmm_vcpu *vcpu = &qcpu->vcpu;
-#endif
     struct nvmm_vcpu_state *state = vcpu->state;
     struct nvmm_vcpu_exit *exit = vcpu->exit;
     const uint64_t esr = exit->esr;
+    uint64_t val = 0;
     int ret;
+
+    const unsigned int op0 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP0);
+    const unsigned int op1 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP1);
+    const unsigned int op2 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP2);
+    const unsigned int CRn = __SHIFTOUT(esr, ESR_ISS_SYSREG_CRN);
+    const unsigned int CRm = __SHIFTOUT(esr, ESR_ISS_SYSREG_CRM);
 
     ret = nvmm_vcpu_getstate(mach, vcpu,
           NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS);
@@ -598,28 +758,184 @@ nvmm_handle_mrs(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
         error_report("NVMM: Failed to set virtual processor context,"
           " error=%d", errno);
 
-    const uint64_t Rt = __SHIFTOUT(esr, ESR_ISS_SYSREG_RT);
     ret = -1;
     switch (esr & MASK) {
     case SYSREG_MDSCR_EL1:
-        state->gprs[Rt] = env->cp15.mdscr_el1;
+        val = env->cp15.mdscr_el1;
+        ret = 0;
+        break;
+    case SYSREG_DBGBVR0_EL1:
+    case SYSREG_DBGBCR0_EL1:
+    case SYSREG_DBGWVR0_EL1:
+    case SYSREG_DBGWCR0_EL1:
+    case SYSREG_DBGBVR1_EL1:
+    case SYSREG_DBGBCR1_EL1:
+    case SYSREG_DBGWVR1_EL1:
+    case SYSREG_DBGWCR1_EL1:
+    case SYSREG_DBGBVR2_EL1:
+    case SYSREG_DBGBCR2_EL1:
+    case SYSREG_DBGWVR2_EL1:
+    case SYSREG_DBGWCR2_EL1:
+    case SYSREG_DBGBVR3_EL1:
+    case SYSREG_DBGBCR3_EL1:
+    case SYSREG_DBGWVR3_EL1:
+    case SYSREG_DBGWCR3_EL1:
+    case SYSREG_DBGBVR4_EL1:
+    case SYSREG_DBGBCR4_EL1:
+    case SYSREG_DBGWVR4_EL1:
+    case SYSREG_DBGWCR4_EL1:
+    case SYSREG_DBGBVR5_EL1:
+    case SYSREG_DBGBCR5_EL1:
+    case SYSREG_DBGWVR5_EL1:
+    case SYSREG_DBGWCR5_EL1:
+    case SYSREG_DBGBVR6_EL1:
+    case SYSREG_DBGBCR6_EL1:
+    case SYSREG_DBGWVR6_EL1:
+    case SYSREG_DBGWCR6_EL1:
+    case SYSREG_DBGBVR7_EL1:
+    case SYSREG_DBGBCR7_EL1:
+    case SYSREG_DBGWVR7_EL1:
+    case SYSREG_DBGWCR7_EL1:
+    case SYSREG_DBGBVR8_EL1:
+    case SYSREG_DBGBCR8_EL1:
+    case SYSREG_DBGWVR8_EL1:
+    case SYSREG_DBGWCR8_EL1:
+    case SYSREG_DBGBVR9_EL1:
+    case SYSREG_DBGBCR9_EL1:
+    case SYSREG_DBGWVR9_EL1:
+    case SYSREG_DBGWCR9_EL1:
+    case SYSREG_DBGBVR10_EL1:
+    case SYSREG_DBGBCR10_EL1:
+    case SYSREG_DBGWVR10_EL1:
+    case SYSREG_DBGWCR10_EL1:
+    case SYSREG_DBGBVR11_EL1:
+    case SYSREG_DBGBCR11_EL1:
+    case SYSREG_DBGWVR11_EL1:
+    case SYSREG_DBGWCR11_EL1:
+    case SYSREG_DBGBVR12_EL1:
+    case SYSREG_DBGBCR12_EL1:
+    case SYSREG_DBGWVR12_EL1:
+    case SYSREG_DBGWCR12_EL1:
+    case SYSREG_DBGBVR13_EL1:
+    case SYSREG_DBGBCR13_EL1:
+    case SYSREG_DBGWVR13_EL1:
+    case SYSREG_DBGWCR13_EL1:
+    case SYSREG_DBGBVR14_EL1:
+    case SYSREG_DBGBCR14_EL1:
+    case SYSREG_DBGWVR14_EL1:
+    case SYSREG_DBGWCR14_EL1:
+    case SYSREG_DBGBVR15_EL1:
+    case SYSREG_DBGBCR15_EL1:
+    case SYSREG_DBGWVR15_EL1:
+    case SYSREG_DBGWCR15_EL1:
+        ret = 0;
+        break;
+    case SYSREG_PMCR_EL0:
+        /* XXXNH Probably needs shadowing. */
+        val = state->sprs[NVMM_AARCH64_SPR_PMCR_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMSELR_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMSELR_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMCNTENSET_EL0:
+    case SYSREG_PMCNTENCLR_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMCNTEN_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMINTENSET_EL1:
+    case SYSREG_PMINTENCLR_EL1:
+        val = state->sprs[NVMM_AARCH64_SPR_PMINTEN_EL1];
+        ret = 0;
+        break;
+    case SYSREG_PMOVSSET_EL0:
+    case SYSREG_PMOVSCLR_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMOVS_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMCCNTR_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMCCNTR_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMCCFILTR_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMCCFILTR_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR0_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVCNTR0_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER0_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVTYPER0_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR1_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVCNTR1_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER1_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVTYPER1_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR2_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVCNTR2_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER2_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVTYPER2_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR3_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVCNTR3_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER3_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVTYPER3_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR4_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVCNTR4_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER4_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVTYPER4_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR5_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVCNTR5_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER5_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMEVTYPER5_EL0];
+        ret = 0;
+        break;
+    case SYSREG_PMUSERENR_EL0:
+        val = state->sprs[NVMM_AARCH64_SPR_PMUSERENR_EL0];
         ret = 0;
         break;
     default:
-        error_report("XXXXXX: NOTYET: NVMM_VCPU_EXIT_MRS (esr %"PRIx64, esr);
+        error_report("XXX: NOTYET: NVMM_VCPU_EXIT_MRS @ %"PRIx64" (esr %"PRIx64 ") "
+	    "(%2d, %2d, %2d, %2d, %2d)", state->sprs[NVMM_AARCH64_SPR_PC], esr,
+	    op0, op1, CRn, CRm, op2);
         abort();
     }
 
-    if (ret == 0) {
-        state->sprs[NVMM_AARCH64_SPR_PC] += 4;
-        ret = nvmm_vcpu_setstate(mach, vcpu, NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS);
-        if (ret == -1) {
-            error_report("NVMM: Failed to set CPU state,"
-                " error=%d", errno);
-        }
-    }
+    if (ret != 0)
+        return ret;
 
-    trace_nvmm_mrs(esr, state->sprs[NVMM_AARCH64_SPR_PC]);
+    const uint64_t Rt = __SHIFTOUT(esr, ESR_ISS_SYSREG_RT);
+
+    if (Rt < 31) {
+       state->gprs[Rt] = val;
+    }
+    state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+    ret = nvmm_vcpu_setstate(mach, vcpu,
+         NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS);
+    if (ret == -1) {
+        error_report("NVMM: Failed to set CPU state,"
+            " error=%d", errno);
+    }
 
     return ret;
 }
@@ -629,53 +945,214 @@ static int
 nvmm_handle_msr(struct nvmm_machine *mach, struct nvmm_vcpu *vcpu,
     CPUARMState *env)
 {
-#if 0
-    ARMCPU *arm_cpu = ARM_CPU(cpu);
-    CPUARMState *env = &arm_cpu->env;
-    AccelCPUState *qcpu = cpu->accel;
-
-    struct nvmm_vcpu *vcpu = &qcpu->vcpu;
-#endif
     struct nvmm_vcpu_state *state = vcpu->state;
     struct nvmm_vcpu_exit *exit = vcpu->exit;
     uint64_t esr = exit->esr;
     int ret = -1;
 
-    ret = nvmm_vcpu_getstate(mach, vcpu, NVMM_AARCH64_STATE_SPRS);
+    ret = nvmm_vcpu_getstate(mach, vcpu,
+        NVMM_AARCH64_STATE_GPRS | NVMM_AARCH64_STATE_SPRS);
     if (ret == -1) {
         error_report("NVMM: Failed to get virtual processor context,"
             " error=%d", errno);
     }
 
+    const unsigned int op0 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP0);
+    const unsigned int op1 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP1);
+    const unsigned int op2 = __SHIFTOUT(esr, ESR_ISS_SYSREG_OP2);
+    const unsigned int CRn = __SHIFTOUT(esr, ESR_ISS_SYSREG_CRN);
+    const unsigned int CRm = __SHIFTOUT(esr, ESR_ISS_SYSREG_CRM);
+
     ret = -1;
+    const uint64_t Rt = __SHIFTOUT(esr, ESR_ISS_SYSREG_RT);
+    uint64_t val = (Rt == 31) ? 0 : state->gprs[Rt];
     switch (esr & MASK) {
     case SYSREG_MDSCR_EL1:
-        // XXX really reg
-        env->cp15.mdscr_el1 = 0;
+        env->cp15.mdscr_el1 = val;
         ret = 0;
         break;
     case SYSREG_OSLAR_EL1:
-	// XXX really reg'
-        env->cp15.oslsr_el1 = 0;
+        env->cp15.oslsr_el1 = val;
         ret = 0;
         break;
-
+    case SYSREG_DBGBVR0_EL1:
+    case SYSREG_DBGBCR0_EL1:
+    case SYSREG_DBGWVR0_EL1:
+    case SYSREG_DBGWCR0_EL1:
+    case SYSREG_DBGBVR1_EL1:
+    case SYSREG_DBGBCR1_EL1:
+    case SYSREG_DBGWVR1_EL1:
+    case SYSREG_DBGWCR1_EL1:
+    case SYSREG_DBGBVR2_EL1:
+    case SYSREG_DBGBCR2_EL1:
+    case SYSREG_DBGWVR2_EL1:
+    case SYSREG_DBGWCR2_EL1:
+    case SYSREG_DBGBVR3_EL1:
+    case SYSREG_DBGBCR3_EL1:
+    case SYSREG_DBGWVR3_EL1:
+    case SYSREG_DBGWCR3_EL1:
+    case SYSREG_DBGBVR4_EL1:
+    case SYSREG_DBGBCR4_EL1:
+    case SYSREG_DBGWVR4_EL1:
+    case SYSREG_DBGWCR4_EL1:
+    case SYSREG_DBGBVR5_EL1:
+    case SYSREG_DBGBCR5_EL1:
+    case SYSREG_DBGWVR5_EL1:
+    case SYSREG_DBGWCR5_EL1:
+    case SYSREG_DBGBVR6_EL1:
+    case SYSREG_DBGBCR6_EL1:
+    case SYSREG_DBGWVR6_EL1:
+    case SYSREG_DBGWCR6_EL1:
+    case SYSREG_DBGBVR7_EL1:
+    case SYSREG_DBGBCR7_EL1:
+    case SYSREG_DBGWVR7_EL1:
+    case SYSREG_DBGWCR7_EL1:
+    case SYSREG_DBGBVR8_EL1:
+    case SYSREG_DBGBCR8_EL1:
+    case SYSREG_DBGWVR8_EL1:
+    case SYSREG_DBGWCR8_EL1:
+    case SYSREG_DBGBVR9_EL1:
+    case SYSREG_DBGBCR9_EL1:
+    case SYSREG_DBGWVR9_EL1:
+    case SYSREG_DBGWCR9_EL1:
+    case SYSREG_DBGBVR10_EL1:
+    case SYSREG_DBGBCR10_EL1:
+    case SYSREG_DBGWVR10_EL1:
+    case SYSREG_DBGWCR10_EL1:
+    case SYSREG_DBGBVR11_EL1:
+    case SYSREG_DBGBCR11_EL1:
+    case SYSREG_DBGWVR11_EL1:
+    case SYSREG_DBGWCR11_EL1:
+    case SYSREG_DBGBVR12_EL1:
+    case SYSREG_DBGBCR12_EL1:
+    case SYSREG_DBGWVR12_EL1:
+    case SYSREG_DBGWCR12_EL1:
+    case SYSREG_DBGBVR13_EL1:
+    case SYSREG_DBGBCR13_EL1:
+    case SYSREG_DBGWVR13_EL1:
+    case SYSREG_DBGWCR13_EL1:
+    case SYSREG_DBGBVR14_EL1:
+    case SYSREG_DBGBCR14_EL1:
+    case SYSREG_DBGWVR14_EL1:
+    case SYSREG_DBGWCR14_EL1:
+    case SYSREG_DBGBVR15_EL1:
+    case SYSREG_DBGBCR15_EL1:
+    case SYSREG_DBGWVR15_EL1:
+    case SYSREG_DBGWCR15_EL1:
+        ret = 0;
+        break;
+    case SYSREG_PMCR_EL0:
+        /* XXXNH Probably needs shadowing. */
+        trace_nvmm_pmcr_el0(val);
+        state->sprs[NVMM_AARCH64_SPR_PMCR_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMSELR_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMSELR_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMCNTENSET_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMCNTEN_EL0] |= val;
+        ret = 0;
+        break;
+    case SYSREG_PMCNTENCLR_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMCNTEN_EL0] &= ~val;
+        ret = 0;
+        break;
+    case SYSREG_PMINTENSET_EL1:
+        state->sprs[NVMM_AARCH64_SPR_PMINTEN_EL1] |= val;
+        ret = 0;
+        break;
+    case SYSREG_PMINTENCLR_EL1:
+        state->sprs[NVMM_AARCH64_SPR_PMINTEN_EL1] &= ~val;
+        ret = 0;
+        break;
+    case SYSREG_PMOVSSET_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMOVS_EL0] |= val;
+        ret = 0;
+        break;
+    case SYSREG_PMOVSCLR_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMOVS_EL0] &= ~val;
+        ret = 0;
+        break;
+    case SYSREG_PMCCNTR_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMCCNTR_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMCCFILTR_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMCCFILTR_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR0_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVCNTR0_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER0_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVTYPER0_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR1_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVCNTR1_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER1_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVTYPER1_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR2_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVCNTR2_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER2_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVTYPER2_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR3_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVCNTR3_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER3_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVTYPER3_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR4_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVCNTR4_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER4_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVTYPER4_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVCNTR5_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVCNTR5_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMEVTYPER5_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMEVTYPER5_EL0] = val;
+        ret = 0;
+        break;
+    case SYSREG_PMUSERENR_EL0:
+        state->sprs[NVMM_AARCH64_SPR_PMUSERENR_EL0] = val;
+        ret = 0;
+        break;
     default:
-        error_report("XXXXXX: NOTYET: NVMM_VCPU_EXIT_MSR (esr %"PRIx64, esr);
+        error_report("XXX: NOTYET: NVMM_VCPU_EXIT_MSR @ %"PRIx64" (esr %"PRIx64 ") "
+	    "(%2d, %2d, %2d, %2d, %2d)", state->sprs[NVMM_AARCH64_SPR_PC], esr,
+	    op0, op1, CRn, CRm, op2);
         abort();
         break;
     }
 
-    if (ret == 0) {
-        state->sprs[NVMM_AARCH64_SPR_PC] += 4;
-        ret = nvmm_vcpu_setstate(mach, vcpu, NVMM_AARCH64_STATE_SPRS);
-        if (ret == -1) {
-            error_report("NVMM: Failed to set CPU state,"
-                " error=%d", errno);
-        }
+    if (ret != 0) {
+        return ret;
     }
 
-    trace_nvmm_msr(esr, state->sprs[NVMM_AARCH64_SPR_PC]);
+    state->sprs[NVMM_AARCH64_SPR_PC] += 4;
+    ret = nvmm_vcpu_setstate(mach, vcpu, NVMM_AARCH64_STATE_SPRS);
+    if (ret == -1) {
+        error_report("NVMM: Failed to set CPU state,"
+            " error=%d", errno);
+    }
 
     return ret;
 }
@@ -1020,6 +1497,8 @@ nvmm_vcpu_loop(CPUState *cpu)
 
         nvmm_vcpu_post_run(cpu, exit);
 
+	trace_nvmm_run_exit(vcpu->cpuid, vcpu->state->sprs[NVMM_AARCH64_SPR_PC], exit->reason);
+
         // ret = 0;???
         switch (exit->reason) {
         case NVMM_VCPU_EXIT_NONE:
@@ -1033,7 +1512,7 @@ nvmm_vcpu_loop(CPUState *cpu)
                 trace_nvmm_vtimer_irq();
                 // Gets sets in interrupt_request
                 qemu_set_irq(arm_cpu->gt_timer_outputs[GTIMER_VIRT], 1);
-                // send irq 
+                // send irq
             }
             if (exit->exitstate.ptimer) {
                 trace_nvmm_ptimer_irq();
@@ -1067,14 +1546,11 @@ nvmm_vcpu_loop(CPUState *cpu)
                     trace_nvmm_unknown_hvc(env->pc, env->xregs[0]);
                     /* SMCCC 1.3 section 5.2 says every unknown SMCCC call returns -1 */
                     env->xregs[0] = -1;
-                } else {
-                    error_report("XXX handled HVC");
                 }
                 cpu->vcpu_dirty = true;
             } else {
-                error_report("XXX unknown conduit %d", arm_cpu->psci_conduit);
-//                trace_nvmm_unknown_hvc(env->pc, env->xregs[0]);
-//                nvmm_raise_exception(cpu, EXCP_UDEF, syn_uncategorized(), 1);
+                trace_nvmm_unknown_hvc(env->pc, env->xregs[0]);
+                nvmm_raise_exception(cpu, EXCP_UDEF, syn_uncategorized(), 1);
             }
             break;
         case NVMM_VCPU_EXIT_SMC:

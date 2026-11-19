@@ -66,9 +66,7 @@ static void
 nvmm_mem_callback(struct nvmm_mem *mem)
 {
 
-    trace_nvmm_run_exit(mem->vcpu->cpuid, NVMM_VCPU_EXIT_MEMORY);
-
-    trace_nvmm_memory_access(mem->vcpu->cpuid, mem->gpa, mem->size, mem->write);
+    trace_nvmm_memory_access(mem->vcpu->cpuid, mem->vcpu->state->sprs[NVMM_AARCH64_SPR_PC], mem->gpa, mem->size, mem->write);
     MemTxAttrs attrs = MEMTXATTRS_UNSPECIFIED;
 
     address_space_rw(&address_space_memory,

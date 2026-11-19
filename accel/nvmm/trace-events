@@ -3,9 +3,8 @@
 # nvmm-all.c
 
 nvmm_cpu_exec(void) ""
-nvmm_run_exit(int cpu_index, uint32_t reason) "cpu_index %d, reason %d"
 nvmm_mapping(uint64_t start_pa, uint64_t size, uintptr_t hva, bool add, bool rom, const char *name) "pa 0x%"PRIx64" size 0x%"PRIx64" hva 0x%"PRIxPTR" add %d rom %d name %s"
-nvmm_memory_access(int cpuid, uint64_t gpa, size_t size, bool write) "cpuid %d, gpa 0x%"PRIx64", size %zu, write %d"
+nvmm_memory_access(int cpuid, uint64_t pc, uint64_t gpa, size_t size, bool write) "cpuid %d, pc 0x%"PRIx64", gpa 0x%"PRIx64", size %zu, write %d"
 
 #nvmm_ioctl(unsigned long type, void *arg) "type 0x%lx, arg %p"
 #nvmm_vm_ioctl(unsigned long type, void *arg) "type 0x%lx, arg %p"

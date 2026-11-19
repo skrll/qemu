@@ -1,5 +1,6 @@
 #nvmm_unhandled_sysreg_read(uint64_t pc, uint32_t reg, uint32_t op0, uint32_t op1, uint32_t crn, uint32_t crm, uint32_t op2) "unhandled sysreg read at pc=0x%"PRIx64": 0x%08x (op0=%d op1=%d crn=%d crm=%d op2=%d)"
 #nvmm_unhandled_sysreg_write(uint64_t pc, uint32_t reg, uint32_t op0, uint32_t op1, uint32_t crn, uint32_t crm, uint32_t op2) "unhandled sysreg write at pc=0x%"PRIx64": 0x%08x (op0=%d op1=%d crn=%d crm=%d op2=%d)"
+nvmm_run_exit(int cpu_index, uint64_t pc, uint32_t reason) "cpu_index %d, pc 0x%"PRIx64", reason 0x%x"
 nvmm_inject_fiq(void) "injecting FIQ"
 nvmm_inject_irq(void) "injecting IRQ"
 nvmm_exit_irq(void) "irq exit"
@@ -17,6 +18,7 @@ nvmm_ptimer_irq(void) "ptimer irq"
 nvmm_updated_dirty(void) "updated dirty"
 nvmm_mrs(uint64_t esr, uint64_t pc) "mrs esr %"PRIx64 " pc %"PRIx64
 nvmm_msr(uint64_t esr, uint64_t pc) "msr esr %"PRIx64 " pc %"PRIx64
+nvmm_pmcr_el0(uint64_t val) "val %"PRIx64
 
 #nvmm_data_abort(uint64_t va, uint64_t pa, bool isv, bool iswrite, bool s1ptw, uint32_t len, uint32_t srt) "data abort: [va=0x%016"PRIx64" pa=0x%016"PRIx64" isv=%d iswrite=%d s1ptw=%d len=%d srt=%d]"
 #nvmm_insn_abort(uint64_t pc, uint32_t set, bool fnv, bool ea, bool s1ptw, uint32_t ifsc) "insn abort: [pc=0x%"PRIx64" set=%d fnv=%d ea=%d s1ptw=%d ifsc=%d]"
